@@ -1,2 +1,2 @@
 # ApexClip
-Turns sports footage into a short highlight reel.
+Turns sports games into a short highlight video.
