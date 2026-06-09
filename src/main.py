@@ -134,7 +134,7 @@ while cap.isOpened():
 
         # Condition B: Stream post-play footage frame-by-frame
         elif highlight_triggered:
-            highlight_writer.write(frame.copy())
+            highlight_writer.write(frame_buffer[-1])
             frames_in_current_clip += 1
 
             if frame_count >= trigger_frame + post_roll_frames_needed:
