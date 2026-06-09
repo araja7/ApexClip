@@ -38,13 +38,15 @@ PRE_ROLL_SECONDS = 6
 BUFFER_MAX_SIZE = PRE_ROLL_SECONDS * fps
 frame_buffer = deque(maxlen=BUFFER_MAX_SIZE)
 
-all_game_highlights = []  
-current_play_frames = []   
+highlight_writer = None
+highlight_clip_count = 0
+total_highlight_frames = 0
 
 highlight_triggered = False
 trigger_frame = 0
+frames_in_current_clip = 0
 POST_ROLL_SECONDS = 3
-post_roll_frames_needed = POST_ROLL_SECONDS * fps  
+post_roll_frames_needed = POST_ROLL_SECONDS * fps
 
 print(f"\n--- Running ApexClip Compilation Engine ---")
 
@@ -107,53 +109,55 @@ while cap.isOpened():
     if len(current_frame_velocities) > 0:
         frame_avg_velocity = np.mean(current_frame_velocities)
         
-        # Condition A: Motion explodes, initiate clip accumulation
+        # Condition A: Motion explodes, stream pre-roll directly to disk
         if frame_avg_velocity > 45.0 and not highlight_triggered:
             print(f"🔥 HIGHLIGHT DETECTED at frame {frame_count}! (Motion: {frame_avg_velocity:.1f}px)")
             highlight_triggered = True
             trigger_frame = frame_count
-            
+
+            if highlight_writer is None:
+                highlight_writer = cv2.VideoWriter(
+                    highlight_output_path, fourcc, fps, (frame_width, frame_height)
+                )
+
             # Safety Wall equation: We can't look back further than the scene start frame
             max_allowed_lookback = frame_count - scene_start_frame
             target_lookback = min(len(frame_buffer), max_allowed_lookback)
-            
-            buffer_list = list(frame_buffer)
-            current_play_frames = buffer_list[-target_lookback:]
-            print(f"   ↳ Software Time Machine buffered {len(current_play_frames)} pre-snap frames.")
+            pre_roll_frames = list(frame_buffer)[-target_lookback:]
 
-        # Condition B: Actively gathering post-play footage
+            for pre_roll_frame in pre_roll_frames:
+                highlight_writer.write(pre_roll_frame)
+
+            frames_in_current_clip = len(pre_roll_frames)
+            highlight_clip_count += 1
+            print(f"   ↳ Software Time Machine buffered {frames_in_current_clip} pre-snap frames.")
+
+        # Condition B: Stream post-play footage frame-by-frame
         elif highlight_triggered:
-            current_play_frames.append(frame.copy())
-            
-            # Append this play to our master reel array
+            highlight_writer.write(frame.copy())
+            frames_in_current_clip += 1
+
             if frame_count >= trigger_frame + post_roll_frames_needed:
-                print(f"➕ Appending play to master memory array. Total frames in this sequence: {len(current_play_frames)}")
-                
-                # Merge current play frames list into our master game array list
-                all_game_highlights.extend(current_play_frames)
-                
-                # Reset temporary variables to search for next play
+                total_highlight_frames += frames_in_current_clip
+                print(
+                    f"➕ Wrote play #{highlight_clip_count} to disk. "
+                    f"Frames in this sequence: {frames_in_current_clip}"
+                )
                 highlight_triggered = False
-                current_play_frames = []
+                frames_in_current_clip = 0
 
     out.write(frame)
 
 cap.release()
 out.release()
+highlight_writer.release()
 cv2.destroyAllWindows()
 
-#Export
-if len(all_game_highlights) > 0:
-    print(f"\n🎬 Exporting Final Compiled Master Reel...")
-    print(f"   ↳ Total Compiled Frame Count: {len(all_game_highlights)}")
-    print(f"   ↳ Saving to: {highlight_output_path}")
-    
-    highlight_writer = cv2.VideoWriter(highlight_output_path, fourcc, fps, (frame_width, frame_height))
-    for h_frame in all_game_highlights:
-        highlight_writer.write(h_frame)
-    highlight_writer.release()
-    
-    print("🏆 Game Highlights File Successfully Generated!")
+if highlight_clip_count > 0:
+    print(f"\n🏆 Game Highlights File Successfully Generated!")
+    print(f"   ↳ Clips compiled: {highlight_clip_count}")
+    print(f"   ↳ Total compiled frame count: {total_highlight_frames}")
+    print(f"   ↳ Saved to: {highlight_output_path}")
 else:
     print("\n⚠️ Processing finished, but no highlights matched the motion thresholds.")
 
